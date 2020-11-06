@@ -17,6 +17,9 @@ function getHeader(source, name) {
     if (source && typeof source.get == 'function')
         return source.get(name) || source.get(name.toLowerCase());
 
+    if (source.headers)
+        return source.headers[name] || source.headers[name.toLowerCase()]
+
     return source[name] || source[name.toLowerCase()];
 }
 
