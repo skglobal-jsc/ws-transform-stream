@@ -1,6 +1,6 @@
 'use strict';
 
-const PQueue = require('p-queue');
+const PQueue = require('p-queue').default;
 const { Duplex, PassThrough } = require('stream');
 const { Sender } = require('ws');
 const PerMessageDeflate = require('ws/lib/permessage-deflate');
@@ -15,6 +15,9 @@ class WsTransformStream extends Duplex {
 
     constructor(options = {}) {
         const {
+            isToServer = true,
+            source,
+            filter,
             transform,
             transformSequential = true,
             sender = {},
@@ -23,16 +26,22 @@ class WsTransformStream extends Duplex {
         } = options;
 
         super();
+        this._mark = isToServer
 
         this._shouldCompress = !!compress;
         this._shouldTransform = typeof transform === 'function';
         this._waiting = false;
         this.transform = this._shouldTransform && transform.bind(this);
 
+        this.source = new Sender(source, receiver.extensions)
+        this._shouldFilter = typeof filter === 'function';
+        this.filter = this._shouldFilter && filter.bind(this);
+
         this.transport = new PassThrough();
         this.receiver = new FlushableReceiver(
             receiver.binaryType,
             receiver.extensions,
+            isToServer,
             receiver.maxPayload,
         );
         this.sender = new Sender(this.transport, sender.extensions);
@@ -81,7 +90,7 @@ class WsTransformStream extends Duplex {
     }
 
     _write(chunk, encoding, cb) {
-        if (this._shouldTransform || !this.receiver.isClean()) {
+        if (this._shouldTransform || this._shouldFilter || !this.receiver.isClean()) {
             this.receiver.write(chunk, encoding, cb);
         } else {
             if (!this.receiver.isFlushed())
@@ -106,20 +115,34 @@ class WsTransformStream extends Duplex {
             this._read();
     }
 
-    _onMessage(message) {
-        Promise.resolve(message)
-            .then(input => this._shouldTransform ? this.transform(input) : input)
-            .then(output => {
-                if (typeof output === 'number') output = output.toString();
+    async _onMessage(message) {
+        try {
+            message = await Promise.resolve(message)
 
-                this.sender.send(output, {
-                    binary: typeof output !== 'string',
-                    mask: false,
-                    compress: this._shouldCompress,
-                    fin: true
-                });
-            })
-            .catch(err => this.emit('error', err));
+            if (this._shouldFilter) {
+                const result = this.filter(message)
+                if (result.isBlocked) {
+                    this.source.send(result.message, {
+                        binary: typeof result.message !== 'string',
+                        mask: false,
+                        compress: this._shouldCompress,
+                        fin: true
+                    })
+                    return
+                }
+            }
+
+            const output = this._shouldTransform ? this.transform(message) : message
+
+            this.sender.send(output, {
+                binary: typeof output !== 'string',
+                mask: this._mark,
+                compress: this._shouldCompress,
+                fin: true
+            });
+        } catch (err) {
+            this.emit('error', err)
+        }
     }
 
     async _onSourceEnd() {

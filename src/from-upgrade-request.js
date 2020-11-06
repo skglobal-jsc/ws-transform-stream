@@ -20,39 +20,34 @@ function getHeader(source, name) {
     return source[name] || source[name.toLowerCase()];
 }
 
-function fromUpdgradeHeaders(upgradeReqOrHeaders, options = {}) {
+function fromUpdgradeHeaders(reqs, options = {}) {
     options.receiver = options.receiver || {};
     options.sender = options.sender || {};
 
-    try {
-        const extHeader = getHeader(upgradeReqOrHeaders, 'Sec-Websocket-Extensions');
-        const extensions = extHeader && WsExtensions.parse(extHeader);
-
-        // they want to enable PerMessageDeflate
-        if (extensions[DEFLATE_EXT_NAME]) {
-            options.receiver.extensions = options.receiver.extensions || {};
-            options.sender.extensions = options.sender.extensions || {};
-
-            options.receiver.extensions[DEFLATE_EXT_NAME] =
-                new PerMessageDeflate({}, true, options.receiver.maxPayload);
-            options.receiver.extensions[DEFLATE_EXT_NAME]
-                .accept(extensions[DEFLATE_EXT_NAME]);
-
-            options.sender.extensions[DEFLATE_EXT_NAME] =
-                new PerMessageDeflate({}, false, options.receiver.maxPayload);
-            options.sender.extensions[DEFLATE_EXT_NAME]
-                .accept(extensions[DEFLATE_EXT_NAME]);
-
+    for (const iterator of ['receiver', 'sender']) {
+        try {
+            if (!reqs[iterator])
+                continue
             options.compress = true;
+
+            const extHeader = getHeader(reqs[iterator], 'Sec-Websocket-Extensions');
+            const extensions = extHeader && WsExtensions.parse(extHeader);
+
+            // they want to enable PerMessageDeflate
+            if (extensions[DEFLATE_EXT_NAME]) {
+                options[iterator].extensions = options[iterator].extensions || {};
+
+                options[iterator].extensions[DEFLATE_EXT_NAME] =
+                    new PerMessageDeflate({}, true, options[iterator].maxPayload);
+                options[iterator].extensions[DEFLATE_EXT_NAME]
+                    .accept(extensions[DEFLATE_EXT_NAME]);
+            }
+        } catch (err) {
+            // silently fail, server/client will handle the errors in negotiation
+
+            if (options[iterator] && options[iterator].extensions)
+                delete options[iterator].extensions[DEFLATE_EXT_NAME];
         }
-    } catch (err) {
-        // silently fail, server/client will handle the errors in negotiation
-
-        if (options.sender && options.sender.extensions)
-            delete options.sender.extensions[DEFLATE_EXT_NAME];
-
-        if (options.receiver && options.receiver.extensions)
-            delete options.receiver.extensions[DEFLATE_EXT_NAME];
     }
 
     return new WsTransformStream(options);
