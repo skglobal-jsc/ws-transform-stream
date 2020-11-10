@@ -29,12 +29,7 @@ const proxy = createProxyServer({
 proxy.on('error', console.error)
 
 function createWsClientTransformStream(req, proxyReq) {
-  return WsTransformStream.fromUpgradeRequest(
-    {
-      receiver: req,
-      sender: proxyReq,
-    },
-    {
+  return WsTransformStream.fromUpgradeRequest(req, {
       isToServer: true,
       source: req.socket,
       filter: (message) => {
@@ -42,17 +37,14 @@ function createWsClientTransformStream(req, proxyReq) {
           isBlocked: message.length > 10,
           message: 'This request is blocked',
         }
-      }
+      },
+      transform: (message) => message.toUpperCase()
     }
   );
 };
 
 function createWsServerTransformStream(req, proxyReq) {
-  return WsTransformStream.fromUpgradeRequest(
-    {
-      receiver: proxyReq,
-      sender: req,
-    }, {
+  return WsTransformStream.fromUpgradeRequest(req, {
       isToServer: false,
       transform: function (message) {
         console.log('receive', message)

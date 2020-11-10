@@ -1,5 +1,6 @@
 import { Socket } from "net";
 import { Duplex } from "stream";
+import { ClientRequest } from "http";
 
 export type FilterFunc = (message: string) => { isBlocked: boolean, message: string }
 export type TransformFunc = (message: string) => string
@@ -32,9 +33,4 @@ export class WsTransformStream extends Duplex {
   receiver
 }
 
-export interface UpgradeRequest{
-  receiver: Request
-  sender: Request
-}
-
-export function fromUpgradeRequest(reqs: UpgradeRequest, options: TransformOptions): WsTransformStream
+export function fromUpgradeRequest(req: ClientRequest, options: TransformOptions): WsTransformStream
